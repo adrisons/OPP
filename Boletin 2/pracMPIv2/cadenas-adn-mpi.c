@@ -383,105 +383,134 @@ char *readFile(char *fileName)
 
 
 printF(int *f, int m, int n){
-  int i,j,value;
+	int i,j,value;
 
-  printf("\n\n Matriz F \n-------------------------\n        ");
-  for(j=0;j<n;j++) {
-        printf("%c,  ",getNucleotido(b[j]));
-  }
-  printf("\n");
+	printf("\n\n Matriz F \n-------------------------\n        ");
+	for(j=0;j<n;j++) {
+		printf("%c,  ",getNucleotido(b[j]));
+	}
+	printf("\n");
 
-  for(i=0;i<=m;i++){
-    if (i>0) printf("%c ",getNucleotido(a[i-1]));
-    else printf("  ");
-    for(j=0;j<=n;j++) {
-        value = *(f+i*(n+1)+j);
-		printf("%3d,",value);
-     }
-  printf("\n");
-  }
-  printf("-------------------------\n");
+	for(i=0;i<=m;i++){
+		if (i>0) printf("%c ",getNucleotido(a[i-1]));
+		else printf("  ");
+		for(j=0;j<=n;j++) {
+			value = *(f+i*(n+1)+j);
+			printf("%3d,",value);
+		}
+		printf("\n");
+	}
+	printf("-------------------------\n");
 }
 
 
 int main(int argc, char **argv){
 
-int i,j,value;
-char *cad1, *cad2;
-int m,n;
+	int i,j,value;
+	char *cad1, *cad2;
+	int m,n;
 
+	int myrank,
+		numprocs;
+	double mytime,   /*variables used for gathering timing statistics*/
+		   maxtime,
+		   mintime,
+		   avgtime;
 
-int myrank,
-    numprocs;
-double mytime,   /*variables used for gathering timing statistics*/
-       maxtime,
-       mintime,
-       avgtime;
+	MPI_Init(&argc,&argv);
+	MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+	 
 
-MPI_Init(&argc,&argv);
-MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
-MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-
-
-PRINT_RESULT = 1;
-DEBUG=1;
+	PRINT_RESULT = 1;
+	DEBUG=1;
 
 //  For debugging:
 //char cadena1[] = "CGAGACGT";   //2,1,0,1,0,2,1,3,3,
 //char cadena2[] = "AGACTAGTTAC";//0,1,0,2,3,0,1,3,3,0,2,2,0
 
   
-  if (argc<3) {
-	printf("\n Usage: ./cadenas-adn filey.adn filex.adn \n\n");
-	exit(EXIT_FAILURE);
-  }
+	if (argc<3) {
+		printf("\n Usage: ./cadenas-adn filey.adn filex.adn \n\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (!myrank) {
+	  /* Realizar toda la entrada/salida de fichero desde el procesador 0 */
+		printf("\n ---------------- Begin of Needleman-Wunsch implementation -------------------------\n");  
+	
+	
+
+	//  char *cad1=readFile(FILENAME1); 
+	//  char *cad2=readFile(FILENAME2);
+
+		cad1=readFile(argv[1]);
+		cad2=readFile(argv[2]);
+
+		m = strlen(cad1)-1;  
+		n = strlen(cad2)-1;
+
+//TODO: Lo de obtener las matrices a enteros no lo podría hacer cada proceso?
+	
+		a = malloc(sizeof(int) * m);
+		b = malloc(sizeof(int) * n);
+
+	DEBUG=0;
+
+		if (DEBUG) printf("\n a[]=");
+		for(i=0;i<m;i++){
+			a[i] = convNucleotido(cad1[i]);
+			if (DEBUG) printf("%d,",a[i]);
+		}
+		if (DEBUG) printf("\n");
 
 
-  printf("\n ---------------- Begin of Needleman-Wunsch implementation -------------------------\n");
+		if (DEBUG) printf("\n b[]=");
+		for(j=0;j<n;j++){
+			b[j] = convNucleotido(cad2[j]);
+			if (DEBUG) printf("%d,",b[j]);
+		}
+		if (DEBUG) printf("\n");
 
-//  char *cad1=readFile(FILENAME1); 
-//  char *cad2=readFile(FILENAME2);
+	}
 
-  cad1=readFile(argv[1]);
-  cad2=readFile(argv[2]);
+		errorcodeM = MPI_Bcast (&m, 1, MPI_INT, root, MPI_COMM_WORLD);
+		if (errorcode != MPI_SUCCESS)
+			MPI_Abort(MPI_COMM_WORLD,errorcodeM);
+	
+		errorcodeN = MPI_Bcast (&n, 1, MPI_INT, root, MPI_COMM_WORLD);
+		if (errorcode != MPI_SUCCESS)
+			MPI_Abort(MPI_COMM_WORLD,errorcodeN);
+			
+		errorcode = MPI_Bcast ( a, m+1, MPI_INT, root, MPI_COMM_WORLD);
+		if (errorcode != MPI_SUCCESS)
+			MPI_Abort(MPI_COMM_WORLD,errorcode);
 
-  m = strlen(cad1)-1;  
-  n = strlen(cad2)-1;
-
-  a = malloc(sizeof(int) * m);
-  b = malloc(sizeof(int) * n);
-
-DEBUG=0;
-
-  if (DEBUG) printf("\n a[]=");
-  for(i=0;i<m;i++){
-     a[i] = convNucleotido(cad1[i]);
-     if (DEBUG) printf("%d,",a[i]);
-  }
-  if (DEBUG) printf("\n");
+int nlocal = (n / numprocs) + ((myrank < (n%numprocs))?1:0);
 
 
-  if (DEBUG) printf("\n b[]=");
-  for(j=0;j<n;j++){
-     b[j] = convNucleotido(cad2[j]);
-     if (DEBUG) printf("%d,",b[j]);
-  }
-  if (DEBUG) printf("\n");
+//Repartid "b" entre los procesadores (Scatterv?)
 
-  //DEBUG=1;
-  mytime = MPI_Wtime();  /*get time just before work section */
-  int *f = computeF(m+1,n+1);
+
+
+//DEBUG=1;
+	mytime = MPI_Wtime();  /*get time just before work section */
+	int *f = computeF(m+1,n+1);
  
-  if (DEBUG) printF(f,m,n);
+	if (DEBUG) printF(f,m,n);
 
-  genAlignment(f,m+1,n+1);
+	genAlignment(f,m+1,n+1);
 
-  mytime = MPI_Wtime() - mytime;  /*get time just after work section*/
+	mytime = MPI_Wtime() - mytime;  /*get time just after work section*/
 
 /* Reduce and print results - Insert here those lines */
 
-  MPI_Finalize();
-
-  printf("\n ---------------- End of Needleman-Wunsch implementation -------------------------\n");
-  exit(EXIT_SUCCESS);
+	MPI_Finalize();
+	
+	if (!myrank) {
+	/* Realizar toda la entrada/salida de fichero desde el procesador 0 */
+		printf("\n ---------------- End of Needleman-Wunsch implementation -------------------------\n");
+	}
+	
+	exit(EXIT_SUCCESS);
 }
