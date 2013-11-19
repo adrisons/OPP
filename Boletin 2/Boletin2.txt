@@ -1,0 +1,248 @@
+El objetivo de este segundo boletín de actividades con MPI es el de
+disponer de un prototipo de algoritmo paralelo con MPI. No va a ser
+funcional, pero en el tercer boletín se completará su desarrollo para
+tener una versión paralela totalmente funcional.
+
+Duración estimada: 2 horas.
+Fecha estimada para terminarlo: martes 29 de Octubre.
+
+-----------------------------------------------------------------------
+
+
+Se va a proceder a realizar un prototipado rápido de la aplicación.
+Vimos en la presentación de la práctica que la construcción de la matriz F había que dividirla entre los procesadores involucrados en el algoritmo. Vamos a dividir esta construcción de la matriz, de un modo
+muy elemental.
+
+
+1º. - La aplicación secuencial sirve como base de la aplicación paralela:
+$ cp cadenas-adn.c cadenas-adn-mpi.c
+
+2º. - Convertir la aplicación en una aplicación MPI incluyendo al inicio
+del código:
+#include <mpi.h>
+
+3º.  - Tenemos una aplicación MPI perfectamente funcional, timing2.c.
+Cojamos el código al inicio de su main (de timing2.c) y pongámoslo al
+inicio del main de cadenas-adn.c:
+
+/**************************/
+    int myrank,
+        numprocs;
+    double mytime,   /*variables used for gathering timing statistics*/
+           maxtime,
+           mintime,
+           avgtime;
+
+    MPI_Init(&argc,&argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+    MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+
+/**************************/
+
+4º- Pongamos el final de timings.c tras el método genAlignment:
+
+/*******************************/
+  genAlignment(f,m+1,n+1);
+
+    mytime = MPI_Wtime() - mytime;  /*get time just after work section*/
+
+/* Reduce and print results - Insert here those lines */
+
+   MPI_Finalize();
+/*************************************/
+
+5º-  Lo que vamos a medir es computeF y genAlignment:
+
+/***********************/
+  mytime = MPI_Wtime();  /*get time just before work section */
+
+  int *f = computeF(m+1,n+1);
+/***********************/
+
+
+6º-   Toda la Entrada/Salida (por pantalla y ficheros) ha de ser
+realizada por el procesador con rango 0. Ej:
+
+/**************************/
+ if (!myrank) {
+  printf("\n ---------------- Begin of Needleman-Wunsch implementation
+-------------------------\n");
+
+  /* Realizar toda la entrada/salida de fichero desde el procesador 0 */
+ }
+/*******************************/
+
+
+7º- Una vez leídas las cadenas de fichero, sólo el procesador 0 conoce
+las dimensiones m y n. Han de ser enviadas al resto de procesadores:
+
+  errorcode = MPI_Bcast (&m, 1, MPI_INT, root, MPI_COMM_WORLD);
+  if (errorcode != MPI_SUCCESS)
+      MPI_Abort(MPI_COMM_WORLD,errorcode);
+
+8º- Y será necesario mandar a todos los procesadores la cadena en
+formato array de enteros "a":
+
+  errorcode = MPI_Bcast ( a, m+1, MPI_INT, root, MPI_COMM_WORLD);
+  if (errorcode != MPI_SUCCESS)
+      MPI_Abort(MPI_COMM_WORLD,errorcode);
+
+9º- El array de enteros "b" ha de ser repartido de forma "block"/bloque
+entre los procesadores involucrados. Así, el número de elementos para el
+procesador "i" es:
+int nlocal = (n / numprocs) + ((i < (n%numprocs))?1:0);
+
+
+10º- Repartid "b" entre los procesadores (Scatterv?).
+
+11º- Aunque no sea válido el resultado, computad la matriz F con la actual división de datos:
+
+  int *f = computeF(m+1,nlocal+1);
+  printF(f,m,nlocal,myrank);
+  genAlignment(f,m+1,nlocal+1);
+
+
+12º- Probad con los archivos file1.adn y file2.adn. Resultado:
+
+Versión secuencial:
+================================================================================
+
+ Matriz F
+-------------------------
+        A,  G,  A,  C,  T,  A,  G,  T,  T,  A,  C,
+    0, -5,-10,-15,-20,-25,-30,-35,-40,-45,-50,-55,
+C  -5, -3, -8,-13, -6,-11,-16,-21,-26,-31,-36,-41,
+G -10, -6,  4, -1, -6, -9,-12, -9,-14,-19,-24,-29,
+A -15,  0, -1, 14,  9,  4,  1, -4, -9,-14, -9,-14,
+G -20, -5,  7,  9,  9,  6,  3,  8,  3, -2, -7,-12,
+A -25,-10,  2, 17, 12,  7, 16, 11,  6,  1,  8,  3,
+C -30,-15, -3, 12, 26, 21, 16, 11, 11,  6,  3, 17,
+G -35,-20, -8,  7, 21, 23, 20, 23, 18, 13,  8, 12,
+T -40,-25,-13,  2, 16, 29, 24, 19, 31, 26, 21, 16,
+-------------------------
+
+Versión paralela (con 2 procesos):
+================================================================================
+
+ Matriz F (process 0)
+-------------------------
+        A,  G,  A,  C,  T,  A,
+    0, -5,-10,-15,-20,-25,-30,
+C  -5, -3, -8,-13, -6,-11,-16,
+G -10, -6,  4, -1, -6, -9,-12,
+A -15,  0, -1, 14,  9,  4,  1,
+G -20, -5,  7,  9,  9,  6,  3,
+A -25,-10,  2, 17, 12,  7, 16,
+C -30,-15, -3, 12, 26, 21, 16,
+G -35,-20, -8,  7, 21, 23, 20,
+T -40,-25,-13,  2, 16, 29, 24,
+-------------------------
+
+
+ Matriz F (process 1)
+-------------------------
+        G,  T,  T,  A,  C,
+    0, -5,-10,-15,-20,-25,
+C  -5, -5, -5,-10,-15,-11,
+G -10,  2, -3, -8,-11,-16,
+A -15, -3, -2, -7,  2, -3,
+G -20, -8, -6, -5, -3, -3,
+A -25,-13,-11,-10,  5,  0,
+C -30,-18,-13,-11,  0, 14,
+G -35,-23,-18,-16, -5,  9,
+T -40,-28,-15,-10,-10,  4,
+-------------------------
+
+Versión paralela (con 4 procesos):
+================================================================================
+
+ Matriz F (process 0)
+-------------------------
+        A,  G,  A,
+    0, -5,-10,-15,
+C  -5, -3, -8,-13,
+G -10, -6,  4, -1,
+A -15,  0, -1, 14,
+G -20, -5,  7,  9,
+A -25,-10,  2, 17,
+C -30,-15, -3, 12,
+G -35,-20, -8,  7,
+T -40,-25,-13,  2,
+-------------------------
+
+
+ Matriz F (process 1)
+-------------------------
+        C,  T,  A,
+    0, -5,-10,-15,
+C  -5,  9,  4, -1,
+G -10,  4,  6,  3,
+A -15, -1,  1, 16,
+G -20, -6, -4, 11,
+A -25,-11, -9,  6,
+C -30,-16,-11,  1,
+G -35,-21,-16, -4,
+T -40,-26,-13, -9,
+-------------------------
+
+
+ Matriz F (process 2)
+-------------------------
+        G,  T,  T,
+    0, -5,-10,-15,
+C  -5, -5, -5,-10,
+G -10,  2, -3, -8,
+A -15, -3, -2, -7,
+G -20, -8, -6, -5,
+A -25,-13,-11,-10,
+C -30,-18,-13,-11,
+G -35,-23,-18,-16,
+T -40,-28,-15,-10,
+-------------------------
+
+
+ Matriz F (process 3)
+-------------------------
+        A,  C,
+    0, -5,-10,
+C  -5, -3,  4,
+G -10, -6, -1,
+A -15,  0, -5,
+G -20, -5, -5,
+A -25,-10, -8,
+C -30,-15, -1,
+G -35,-20, -6,
+T -40,-25,-11,
+-------------------------
+
+================================================================================
+
+
+Los resultados no son válido, pero siguiendo estos sencillos pasos se
+han repartido los datos a los procesadores que van a realizar el trabajo.
+
+Para realizar este ejercicio podéis trabajar en vuestras máquinas en
+local en lugar de en el CESGA, ya que tendréis que hacer muchas pruebas
+y Debugging.
+
+
+#######################################################################
+OS PIDO QUE LOS QUE HAGÁIS ESTE BOLETÍN ME ENVIEIS EL RESULTADO DE LA
+VERSIÓN PARALELA CON 3 PROCESOS, EN EL MISMO FORMATO EN QUE YO OS LO
+PRESENTO EN EL PUNTO 12 Y USANDO file1.adn y file2.adn. ES DECIR:
+
+Versión paralela (con 3 procesos):
+================================================================================
+[.....]
+
+
+
+
+El Boletín 3 consistirá en implementar las comunicaciones básicas para
+que esta aplicación paralela obtenga resultados correctos.
+
+
+
+Para cualquier duda, estoy a vuestra disposición.
+
+
