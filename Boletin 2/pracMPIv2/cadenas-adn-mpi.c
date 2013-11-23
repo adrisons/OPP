@@ -455,7 +455,7 @@ int main(int argc, char **argv){
 		a = malloc(sizeof(int) * m);
 		b = malloc(sizeof(int) * n);
 
-	DEBUG=0;
+		DEBUG=0;
 
 		if (DEBUG) printf("\n a[]=");
 		for(i=0;i<m;i++){
@@ -487,19 +487,31 @@ int main(int argc, char **argv){
 			MPI_Abort(MPI_COMM_WORLD,errorcode);
 
 int nlocal = (n / numprocs) + ((myrank < (n%numprocs))?1:0);
+/**TODO
+DUDA (no da bien la suma ¿?)
+n = 10
+numprocs = 4
+-------------
+nlocal(1) = 2.5 + (1<2) = 3.5
+nlocal(2) = 2.5 + (2<2) = 2.5 
+nlocal(3) = 2.5 + (3<2) = 2.5
+nlocal(3) = 2.5 + (4<2) = 2.5
 
+*/
 
-//Repartid "b" entre los procesadores (Scatterv?)
-
+// Create a buffer that will hold a subset of the random numbers
+int *sub_b = malloc(sizeof(int) * nlocal);
+// Scatter b to all processes
+MPI_Scatter(b, nlocal, MPI_INT, sub_b, nlocal, MPI_INT, 0, MPI_COMM_WORLD)
 
 
 //DEBUG=1;
 	mytime = MPI_Wtime();  /*get time just before work section */
-	int *f = computeF(m+1,n+1);
+	int *f = computeF(m+1,nlocal+1);
  
-	if (DEBUG) printF(f,m,n);
+	if (DEBUG) printF(f,m,nlocal);
 
-	genAlignment(f,m+1,n+1);
+	genAlignment(f,m+1,nlocal+1);
 
 	mytime = MPI_Wtime() - mytime;  /*get time just after work section*/
 
