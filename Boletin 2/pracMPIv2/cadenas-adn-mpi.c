@@ -411,7 +411,8 @@ int main(int argc, char **argv){
 	int m,n;
 
 	int myrank,
-		numprocs;
+		numprocs,
+		itask;
 	double mytime,   /*variables used for gathering timing statistics*/
 		   maxtime,
 		   mintime,
@@ -421,6 +422,8 @@ int main(int argc, char **argv){
 	MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
 	MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
 	 
+	int sendcounts[numprocs];
+	int displs[numprocs];
 
 	PRINT_RESULT = 1;
 	DEBUG=1;
@@ -472,38 +475,58 @@ int main(int argc, char **argv){
 		}
 		if (DEBUG) printf("\n");
 
+	
 	}
 
-		errorcodeM = MPI_Bcast (&m, 1, MPI_INT, root, MPI_COMM_WORLD);
-		if (errorcode != MPI_SUCCESS)
-			MPI_Abort(MPI_COMM_WORLD,errorcodeM);
+
+	int errorcodeM = MPI_Bcast (&m, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	if (errorcodeM != MPI_SUCCESS)
+		MPI_Abort(MPI_COMM_WORLD,errorcodeM);
 	
-		errorcodeN = MPI_Bcast (&n, 1, MPI_INT, root, MPI_COMM_WORLD);
-		if (errorcode != MPI_SUCCESS)
-			MPI_Abort(MPI_COMM_WORLD,errorcodeN);
-			
-		errorcode = MPI_Bcast ( a, m+1, MPI_INT, root, MPI_COMM_WORLD);
-		if (errorcode != MPI_SUCCESS)
-			MPI_Abort(MPI_COMM_WORLD,errorcode);
+	int errorcodeN = MPI_Bcast (&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
+	if (errorcodeN != MPI_SUCCESS)
+		MPI_Abort(MPI_COMM_WORLD,errorcodeN);
 
-int nlocal = (n / numprocs) + ((myrank < (n%numprocs))?1:0);
-/**TODO
-DUDA (no da bien la suma ¿?)
-n = 10
-numprocs = 4
--------------
-nlocal(1) = 2.5 + (1<2) = 3.5
-nlocal(2) = 2.5 + (2<2) = 2.5 
-nlocal(3) = 2.5 + (3<2) = 2.5
-nlocal(3) = 2.5 + (4<2) = 2.5
+	if(myrank)
+		a = malloc(sizeof(int) * m);
+	int errorcode = MPI_Bcast (a, m, MPI_INT, 0, MPI_COMM_WORLD);
+	if (errorcode != MPI_SUCCESS)
+		MPI_Abort(MPI_COMM_WORLD,errorcode);
 
-*/
 
-// Create a buffer that will hold a subset of the random numbers
-int *sub_b = malloc(sizeof(int) * nlocal);
-// Scatter b to all processes
-MPI_Scatter(b, nlocal, MPI_INT, sub_b, nlocal, MPI_INT, 0, MPI_COMM_WORLD)
+	
+	displs[0] = 0;
+	sendcounts[0] = (n / numprocs) + ((0 < (n%numprocs))?1:0);
+	for(itask=1; itask<numprocs; itask++){
+		sendcounts[itask] = (n / numprocs) + ((itask < (n%numprocs))?1:0);
+		displs[itask]=displs[itask-1] + sendcounts[itask-1];
+	}
 
+	if(!myrank){
+		printf("\n");
+		for(i=0;i<numprocs;i++){
+			printf("Task %d: Vector sent to %d: sum=%d size= %d\n",
+		    myrank,i,displs[i],sendcounts[i]);//fflush(stdout);
+		}
+	}
+
+	int nlocal = (n / numprocs) + ((myrank < (n%numprocs))?1:0);
+
+	/**TODO
+	DUDA (el proc 0 tambien hace trabajo ¿?)
+	n = 10
+	numprocs = 4
+	-------------
+	nlocal(0) = 2.5 + (0<2) = 3.5 -> 3
+	nlocal(1) = 2.5 + (1<2) = 3.5 -> 3
+	nlocal(2) = 2.5 + (2<2) = 2.5 -> 2
+	nlocal(3) = 2.5 + (3<2) = 2.5 -> 2
+	*/
+	
+	// Create a buffer that will hold a subset of the random numbers
+	int *sub_b = malloc(sizeof(int) * nlocal);
+	// Scatter b to all processes
+	MPI_Scatterv(b, sendcounts, displs, MPI_INT, sub_b, nlocal, MPI_INT, 0, MPI_COMM_WORLD);
 
 //DEBUG=1;
 	mytime = MPI_Wtime();  /*get time just before work section */
