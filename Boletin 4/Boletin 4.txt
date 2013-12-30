@@ -1,0 +1,178 @@
+Hola a todos,
+
+El objetivo de este cuarto boletín de actividades con MPI es el de
+explorar posibles optimizaciones a la implementación básica de la 
+práctica realizada en el Boletín 3.
+
+Duración estimada: de 0,5 a 2 hora por cada optimización + 1 hora toma de resultados (mínimo 1,5 horas - máximo 8 horas).
+
+Fecha estimada para terminarlo: martes 26 de Noviembre.
+
+-----------------------------------------------------------------------
+
+Tras la realización del Boletín 3 obtuvimos la construcción válida de la matriz F en paralelo. No obstante, la paralelización básica de dicha función implicaba una serialización del trabajo realizado por cada procesador. Así, el "process 0" iniciaba la construcción de la matriz. Cuando terminase le pasaba su última columna al "process 1" y así sucesivamente, hasta el "process n-1". Para la generación del alineamiento ocurría algo similar, pero a la inversa, comenzando en el 
+"process n-1" para terminar en "process 0".
+ 
+Así, para construir la matriz F (file1.adn con file2.adn): 
+
+ Matriz F (process 0)
+-------------------------
+        A,  G,  A,  C,  T,  A,  G,  T,  T,  A,  C,  
+    0, -5,-10,-15,-20,-25,-30,-35,-40,-45,-50,-55,
+C  -5, -3, -8,-13, -6,-11,-16,-21,-26,-31,-36,-41,
+G -10, -6,  4, -1, -6, -9,-12, -9,-14,-19,-24,-29,
+A -15,  0, -1, 14,  9,  4,  1, -4, -9,-14, -9,-14,
+G -20, -5,  7,  9,  9,  6,  3,  8,  3, -2, -7,-12,
+A -25,-10,  2, 17, 12,  7, 16, 11,  6,  1,  8,  3,
+C -30,-15, -3, 12, 26, 21, 16, 11, 11,  6,  3, 17,
+G -35,-20, -8,  7, 21, 23, 20, 23, 18, 13,  8, 12,
+T -40,-25,-13,  2, 16, 29, 24, 19, 31, 26, 21, 16,
+
+
+Usando 3 procesadores se obtenían los siguientes resultados:
+
+Matriz F (process 0)
+-------------------------
+        A,  G,  A,  C, 
+    0, -5,-10,-15,-20,
+C  -5, -3, -8,-13, -6,
+G -10, -6,  4, -1, -6,
+A -15,  0, -1, 14,  9,
+G -20, -5,  7,  9,  9,
+A -25,-10,  2, 17, 12,
+C -30,-15, -3, 12, 26,
+G -35,-20, -8,  7, 21,
+T -40,-25,-13,  2, 16,
+-------------------------
+
+ Matriz F (process 1)
+-------------------------
+        T,  A,  G,  T,  
+  -20,-25,-30,-35,-40,
+C  -6,-11,-16,-21,-26,
+G  -6, -9,-12, -9,-14,
+A   9,  4,  1, -4, -9,
+G   9,  6,  3,  8,  3,
+A  12,  7, 16, 11,  6,
+C  26, 21, 16, 11, 11,
+G  21, 23, 20, 23, 18,
+T  16, 29, 24, 19, 31,
+-------------------------
+
+ Matriz F (process 2)
+-------------------------
+        T,  A,  C,  
+  -40,-45,-50,-55,
+C -26,-31,-36,-41,
+G -14,-19,-24,-29,
+A  -9,-14, -9,-14,
+G   3, -2, -7,-12,
+A   6,  1,  8,  3,
+C  11,  6,  3, 17,
+G  18, 13,  8, 12,
+T  31, 26, 21, 16,
+------------------------- 
+
+
+Veamos posibles estrategias para acelerar esta aplicación.
+
+1º Observamos que utilizando 2 procesadores el rendimiento *no mejora*. Mirad ésto en una máquina dual-core o en el clúster utilizando dos procesadores. Ejemplo: utilizando mi máquina:
+
+taboada@mxn$ mpirun -np 1 ./a.out CSI1.dna SUSPECTA3.dna 
+ Min: 5.472656  Max: 5.472656  Avg:  5.472656
+
+taboada@mxn$ mpirun -np 2 ./a.out CSI1.dna SUSPECTA3.dna 
+ Min: 5.570312  Max: 5.570312  Avg:  5.570312
+
+Este resultado es predecible al serializar la construcción de la matriz F y la generación del alineamiento.
+
+
+2º ¿Qué tarda más, la construcción de la matriz F o la generación del alineamiento? 
+Utilizando la función "MPI_Wtime" para medir el tiempo de ejecución de "computeF" se obtienen los siguientes resultados:
+
+taboada@mxn$ mpirun -np 1 ./a.out CSI1.dna SUSPECTA3.dna 
+ Min: 5.546875  Max: 5.546875  Avg:  5.546875
+
+taboada@mxn$ mpirun -np 2 ./a.out CSI1.dna SUSPECTA3.dna 
+ Min: 2.816406  Max: 5.574219  Avg:  4.195312
+
+
+De aquí se deduce que la función "computeF" tarda unos 5.5 segundos con un procesador, siendo prácticamente despreciable el tiempo de "genAlignment". Con dos procesadores "computeF" tarda 2.8 segundos en un procesador y 5.5 en otro. Esto es debido a que el cómputo que realiza cada procesador son unos 2.8 segundos. No obtante, el "process 1" tiene que esperar a que finalice el procesador 0 y por eso tarda el mismo tiempo (o más) que si hiciese el cálculo en secuencial. Tras este análisis vamos a centrarnos casi en exclusiva en "computeF".
+
+
+3º OPTIMIZACIÓN I - Enviar fragmentos de la columna última de cada procesador en lugar de esperar a tener calculado toda la matriz F para un determinado procesador.
+
+Por ejemplo, enviando la primera mitad de la columna, y luego la segunda mitad, sería de esperar una reducción de 1/4 del tiempo de ejecución utilizando dos procesadores. Así, los resultados que he obtenido con esta optimización son:
+
+taboada@mxn$ mpirun -np 2 ./a.out CSI1.dna SUSPECTA3.dna 
+ Min: 4.355469  Max: 4.355469  Avg:  4.355469
+
+Un 22% de reducción, muy próximo al valor esperado (25%).
+
+
+4º OPTIMIZACIÓN II - Anticipar computación a la recepción de la última columna del proceso anterior. 
+
+Es posible ir calculando el valor de "choice2" para todas las posiciones en cada procesador, ya que no depende del valor del procesador anterior. En este caso, el realizar la computación de este valor de "choice2" previamente ha supuesto un 4% adicional de disminución de tiempo:
+
+taboada@mxn$ mpirun -np 2 ./a.out CSI1.dna SUSPECTA3.dna 
+ Min: 4.101562  Max: 4.105469  Avg:  4.103516
+
+También sería posible realizar el cálculo de "choice1" con cierta antelación, en algún caso particular, 
+obteniendo un 7% de reducción de tiempo adicional:
+
+taboada@mxn$ mpirun -np 2 ./a.out CSI1.dna SUSPECTA3.dna 
+ Min: 3.730469  Max: 3.761719  Avg:  3.746094
+
+
+
+5º OPTIMIZACIÓN III. Es posible mejorar la eficiencia del código (ejecución de bucles, optimización de operaciones, etc...) de un modo sencillo. La optimización ha sido:
+
+taboada@mxn$ mpirun -np 2 ./a.out CSI1.dna SUSPECTA3.dna 
+ Min: 1.199219  Max: 1.250000  Avg:  1.224609
+
+
+6º OPTIMIZACIÓN IV. Solapar computación con comunicación.
+
+¿Cómo es posible solapar computación con comunicación? Utilizando comunicaciones no bloqueantes. Se emite la petición de comunicación (Request). Y luego se "testea" si esa comunicación ha tenido lugar (si ya ha sido "done"). Mientras tanto se puede ir avanzando en la realización de algún tipo de computación pendiente.
+Ejemplo:
+
+ANTES:
+ 
+for(i=0;i<n;i++)
+   Calculo_de_choice2_fila(i);
+
+MPI__Recv(..ultima columna.., myrank-1, tag, MPI_COMM_WORLD, &status);
+
+
+DESPUÉS:
+
+MPI_Irecv(..ultima col.., myrank-1, tag, MPI_COMM_WORLD, &request);
+MPI_Test(&request,&done,&status);
+
+while(!done && (i<n)) {
+  Calculo_de_choice2_fila(i++);
+  MPI_Test(&request,&done,&status);
+}
+
+if (!done) MPI_Wait(&request,&status);
+
+
+================================================================================
+
+Para realizar este ejercicio es altamente recomendable que utilicéis una máquina con dos cores o que os conectéis al svgd del CESGA. Aunque para programar las optimizaciones podéis utilizar una máquina con un sólo procesador/core, esto sólo sirve para un debugging básico. El trabajar con dos procesos en paralelo manifestará problemas que de otro modo no son visibles. Además, la plataforma de ejecución de las aplicaciones será el bw del CESGA, con lo cual deberéis optimizar la ejecución sobre ese sistema.
+
+
+
+#######################################################################
+OS PIDO QUE LOS QUE HAGÁIS ESTE BOLETÍN ME ENVIEIS EL TIEMPO DE EJECUCIÓN DE VUESTRA APLICACIÓN MPI CON CSI1.dna Y SUSPECTA3.dna UTILIZANDO 1, 2, 4 8 Y 16 PROCESOS EN EL CLÚSTER BW DEL CESGA (UTILIZANDO EL SISTEMA DE COLAS SIEMPRE). ES NECESARIO UTILIZAR AL MENOS UNA OPTIMIZACIÓN DE LAS PROPUESTAS. INDICADME OPTMIZACIÓN Y UN BREVE COMENTARIO, NO MÁS DE 5 LÍNEAS, SOBRE CÓMO HABÉIS ABORDADO DICHA OPTIMIZACIÓN.
+
+#######################################################################
+
+Este Boletín constituye el último para la práctica de MPI. 
+Espero que haya servido de guía para implementar esta práctica.
+
+
+
+Para cualquier duda, estoy a vuestra disposición.
+
+

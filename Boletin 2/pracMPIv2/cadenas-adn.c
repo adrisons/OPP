@@ -369,10 +369,10 @@ char *readFile(char *fileName)
 
     if (DEBUG2) {
         int i;
-		char *cadena2 = cadena;
-		for(i=1;i<=read_chars;i++){
-		   printf("[%d,%c],",i,*cadena2++);
-		}
+	char *cadena2 = cadena;
+	for(i=1;i<=read_chars;i++){
+	   printf("[%d,%c],",i,*cadena2++);
+	}
     }
 
     return cadena;
@@ -395,7 +395,7 @@ printF(int *f, int m, int n){
     else printf("  ");
     for(j=0;j<=n;j++) {
         value = *(f+i*(n+1)+j);
-		printf("%3d,",value);
+	printf("%3d,",value);
      }
   printf("\n");
   }

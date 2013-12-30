@@ -22,7 +22,7 @@ main(int argc, char **argv)
     MPI_Barrier(MPI_COMM_WORLD);  /*synchronize all processes*/
     mytime = MPI_Wtime();  /*get time just before work section */
 
-//    printf("Hello World from Node %d\n",myrank);
+    printf("Hello World from Node %d\n",myrank);
 
     mytime = MPI_Wtime() - mytime;  /*get time just after work section*/
  

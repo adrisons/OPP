@@ -1,0 +1,21 @@
+
+Duración estimada: 1 hora.
+Fecha estimada para terminarlo: martes 22 de Octubre.
+
+(1) Descargad el archivo pracMPI.tgz de la FV. Extraed el archivo timing2.c. Subidlo a svgd.cesga.es. Compiladlo.Enviadlo a la cola con 2 procesadores. Volved a enviarlo a 8 y luego a 16 procesadores. Modificadlo comentando la línea del "hello world". Volved a compilarlo. Enviadlos a 2, a 8 y a 16 procesadores. Enviadme por email las salidas obtenidas para 16 procesadores con la línea comentada, y sin comentar. 
+
+(2) Descargad el archivo pracMPI.tgz de la FV. Extraed el archivo cadenas-adn.c y file5.adn y file7.adn. Subidlos a svgd.cesga.es. Modificad cadenas-adn.c indicando como ficheros de entrada file5.adn y file7.adn en lugar de file1.adn y file2.adn. Poned la variable DEBUG=0. Compiladlo. En esa sesión abierta para compilar, ejecutad "time ./a.out". Enviadme por correo toda la salida obtenida (son unas 13 líneas).
+
+_________________________________________________________________________
+
+Realizar esta actividad no compromete a realizar las siguientes, y no realizar ésta no compromete a la hora de realizar otras posteriores.
+
+El objetivo de estas actividades es afianzar las destrezas trabajadas en las dos sesiones de laboratorio. Este trabajo, estimado en 60 minutos ahora, puede suponer mucho más tiempo cuando queráis iniciar la práctica si no se ha afianzado antes.
+
+Un ejemplo de esto sería el tener configurado el ssh para no teclear password, y tener un script "lanza" para mandar los trabajos a colas. Habiendo realizada esa configuración previa, el tiempo estimado para realizar este boletín es de 30 minutos.
+
+[curso260@svgd ~]$ cat lanza
+# Uso de lanza: lanza runmpi num_proc
+# Ejemplo:      ./lanza runmpi 16
+qsub -cwd -l -arch=amd,num_proc=1,s_rt=00:02:05,s_vmem=2G,h_fsize=1G \
+-pe mpi $2 $1

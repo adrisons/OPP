@@ -1,0 +1,218 @@
+
+El objetivo de este tercer boletín de actividades con MPI es el de disponer de un prototipo de algoritmo paralelo con MPI *totalmente funcional*. Es decir, resuelve el problema encomendado aunque paralelizado de una manera muy simple. El siguiente boletín (último para la práctica de MPI) servirá para explorar posibles optimizaciones. De este modo la realización de los cuatro boletines conlleva tener una práctica simple, pero perfectamente válida.
+
+
+Duración estimada: 3 horas.
+Fecha estimada para terminarlo: martes 5 de Noviembre.
+
+-----------------------------------------------------------------------
+
+NOTA: durante la implementación/depuración de este algoritmo siempre me referiré al alineamiento de las secuencias file1.adn con file2.adn.
+
+
+Tras la realización del boletín 2 obtuvimos una matriz F construída de forma paralela, pero no válida. El único procesador que disponía de los valores correctos era el procesador con rango 0.
+
+Así, la Matriz F para un único procesador coincide con la matriz F de la versión secuencial:
+
+ Matriz F (process 0)
+-------------------------
+        A,  G,  A,  C,  T,  A,  G,  T,  T,  A,  C,  
+    0, -5,-10,-15,-20,-25,-30,-35,-40,-45,-50,-55,
+C  -5, -3, -8,-13, -6,-11,-16,-21,-26,-31,-36,-41,
+G -10, -6,  4, -1, -6, -9,-12, -9,-14,-19,-24,-29,
+A -15,  0, -1, 14,  9,  4,  1, -4, -9,-14, -9,-14,
+G -20, -5,  7,  9,  9,  6,  3,  8,  3, -2, -7,-12,
+A -25,-10,  2, 17, 12,  7, 16, 11,  6,  1,  8,  3,
+C -30,-15, -3, 12, 26, 21, 16, 11, 11,  6,  3, 17,
+G -35,-20, -8,  7, 21, 23, 20, 23, 18, 13,  8, 12,
+T -40,-25,-13,  2, 16, 29, 24, 19, 31, 26, 21, 16,
+
+
+Os pedí el resultado de construir la matriz de forma paralela en 3 procesadores. Un@ de vosotros me envió el siguiente resultado
+
+Matriz F (process 0)
+-------------------------
+        A,  G,  A,  C, 
+    0, -5,-10,-15,-20,
+C  -5, -3, -8,-13, -6,
+G -10, -6,  4, -1, -6,
+A -15,  0, -1, 14,  9,
+G -20, -5,  7,  9,  9,
+A -25,-10,  2, 17, 12,
+C -30,-15, -3, 12, 26,
+G -35,-20, -8,  7, 21,
+T -40,-25,-13,  2, 16,
+-------------------------
+
+ Matriz F (process 1)
+-------------------------
+        T,  A,  G,  T, 
+    0, -5,-10,-15,-20,
+C  -5,  0, -5,-10,-15,
+G -10, -5, -1,  2, -3,
+A -15,-10,  5,  0, -2,
+G -20,-15,  0, 12,  7,
+A -25,-20, -5,  7,  8,
+C -30,-25,-10,  2,  7,
+G -35,-30,-15, -3,  2,
+T -40,-27,-20, -8,  5,
+-------------------------
+
+ Matriz F (process 2)
+-------------------------
+        T,  A,  C, 
+    0, -5,-10,-15,
+C  -5,  0, -5, -1,
+G -10, -5, -1, -6,
+A -15,-10,  5,  0,
+G -20,-15,  0,  0,
+A -25,-20, -5, -3,
+C -30,-25,-10,  4,
+G -35,-30,-15, -1,
+T -40,-27,-20, -6,
+------------------------- 
+
+
+Se puede ver que coincide la matriz F en el process 0 con las 5 primeras columnas de la matriz F global. 
+
+1º ANALICEMOS LAS DEPENDENCIAS:
+
+Observando cómo se construye la matriz F, vemos que para obtener una columna 'c' es necesario disponer de la columna 'c-1'. Por lo tanto, para construir la porción de la matriz F en un procesador p (con p>0) es necesario obtener la columna anterior.
+
+ Las comunicaciones necesarias parece que son:
+
+ if  (rank > 0)
+	//recibir última columna de procesador rank-1 en la columna '0'
+ 
+ calculo F
+
+ if (rank < np-1) //es decir, no soy el último
+	//enviar última columna a procesador rank+1
+
+
+2º PREGUNTA: ¿CÓMO ENVIAR UNA COLUMNA?
+   RESPUESTA: TIPOS DERIVADOS
+
+  MPI_Datatype tipo;
+  MPI_Type_vector(a,b,c,MPI_INT,&tipo);
+  MPI_Type_commit(&tipo);
+  //usar tipo
+  MPI_Type_free(&tipo); 
+
+Necesitáis averiguar los valores de 'a', 'b' y 'c'. Consultad apuntes.
+
+Mandar la última columna sería:
+MPI_Send(f+(n-1), 1, tipo, myrank+1,tag,MPI_COMM_WORLD);
+y recibirla:
+MPI_Recv(f,1, tipo, myrank-1,tag,MPI_COMM_WORLD, &status);
+
+
+
+Una vez hecho ésto, el resultado que me enviásteis tras el boletín 2 se convierte en:
+
+
+Matriz F (process 0)
+-------------------------
+        A,  G,  A,  C, 
+    0, -5,-10,-15,-20,
+C  -5, -3, -8,-13, -6,
+G -10, -6,  4, -1, -6,
+A -15,  0, -1, 14,  9,
+G -20, -5,  7,  9,  9,
+A -25,-10,  2, 17, 12,
+C -30,-15, -3, 12, 26,
+G -35,-20, -8,  7, 21,
+T -40,-25,-13,  2, 16,
+-------------------------
+
+ Matriz F (process 1)
+-------------------------
+        T,  A,  G,  T,  
+  -20,-25,-30,-35,-40,
+C  -6,-11,-16,-21,-26,
+G  -6, -9,-12, -9,-14,
+A   9,  4,  1, -4, -9,
+G   9,  6,  3,  8,  3,
+A  12,  7, 16, 11,  6,
+C  26, 21, 16, 11, 11,
+G  21, 23, 20, 23, 18,
+T  16, 29, 24, 19, 31,
+-------------------------
+
+ Matriz F (process 2)
+-------------------------
+        T,  A,  C,  
+  -40,-45,-50,-55,
+C -26,-31,-36,-41,
+G -14,-19,-24,-29,
+A  -9,-14, -9,-14,
+G   3, -2, -7,-12,
+A   6,  1,  8,  3,
+C  11,  6,  3, 17,
+G  18, 13,  8, 12,
+T  31, 26, 21, 16,
+------------------------- 
+
+
+3º GENERADA F, OBTENER EL ALINEAMIENTO
+
+ La condición de parada de la función de alineamiento en secuencial era llegar a la posición f(0,0).
+  ¿Cual es la condición en una versión paralela, referida a cada procesador?
+
+
+  Una vez averiguada esa posición tenéis que parar la reconstrucción de la cadena en ese punto. 
+
+
+4º RECOLECCIÓN DE CADENAS GENERADAS PARCIALMENTE. 
+
+  En este apartado vamos a utilizar un MPI_Gather:
+
+int MPI_Gather(void *sendbuf,int sendcnt,MPI_Datatype sendtype, void *recvbuf, int recvcount, MPI_Datatype recvtype,int root, MPI_Comm comm )
+
+usando MPI_CHAR para recoger ("gather") las cadenas de alineamiento.
+
+
+ATENCIÓN: La utilización de Gather es adecuada para la realización de una primera versión funcional, pero una versión optimizada de la recolección de cadenas pasaría por utilizar comunicaciones punto a punto no bloqueantes, y no el MPI_Gather que bloquea las procesadores hasta que todos han llegado a ese punto. Resumiendo, una práctica "simple" usará MPI_Gather, pero una "más elaborada" usará comunicaciones punto a punto no bloqueantes para recoger las cadenas de alineamiento.
+
+ATENCIÓN 2: Quizás para generar las cadenas de alineamiento en un procesador con rango k sea necesario conocer en dónde terminó la cadena del procesador con rango k+1, de tal forma que los elementos seleccionados sean los mismos que en la versión secuencial.
+
+
+5º IMPRESIÓN DE RESULTADOS
+
+ La cadena de alineamiento obtenida se imprimirá en el procesador con rango 0, que es el que ha recibido los datos del apartado anterior. Utilizad el mismo formato que en la impresión en la versión secuencial.
+
+================================================================================
+
+Para realizar este ejercicio podéis trabajar en vuestras máquinas en
+local en lugar de en el CESGA, ya que tendréis que hacer muchas pruebas
+y Debugging.
+
+
+#######################################################################
+OS PIDO QUE LOS QUE HAGÁIS ESTE BOLETÍN ME ENVIEIS EL RESULTADO DE LA
+IMPRESIÓN DE LA CADENA DE ALINEAMIENTO CON 2, 3, 4, 5, 6, 7, 8, 9, 10 y 11 PROCESOS, USANDO file1.adn y file2.adn. CUANDO LA SALIDA PARA UN NÚMERO DE PROCESADORES SEA DISTINTA RAZONADME EN MENOS DE 3 LÍNEAS LAS CAUSAS QUE CREÉIS QUE PROVOCAN QUE SEA DISTINTA LA SALIDA (OPTAR POR SELECCIONAR UN SCORE (DIAG, UP O LEFT) DISTINTO, ETC...)
+
+Ejemplo:
+______________________
+Resultado secuencial:
+ A=--AGACTAGTTAC
+     ||||  | |  
+ B=CGAGAC--G-T--
+*********************
+Resultado con P=2:
+ A=--AGACTAGTTAC
+     ||||  | |  
+ B=CGAGAC--G-T--
+---------------------
+Resultado con P=2:
+     [...]
+
+#######################################################################
+
+
+El Boletín 4 consistirá en proponer optimizaciones a esta implementación básica pero funcional.
+
+
+Para cualquier duda, estoy a vuestra disposición.
+
+
